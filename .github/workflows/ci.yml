@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  dev-quality:
+    name: Dev Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, mbstring
+          coverage: none
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: dev-${{ runner.os }}-composer-${{ hashFiles('composer.dev.json', 'composer.dev.lock') }}
+          restore-keys: dev-${{ runner.os }}-composer-
+      - name: Install dependencies (dev)
+        run: COMPOSER=composer.dev.json composer install --no-progress
+      - name: Check coding standards
+        run: COMPOSER=composer.dev.json composer phpcs
+      - name: Run static analysis
+        run: COMPOSER=composer.dev.json composer phpstan
+      - name: Run tests
+        run: COMPOSER=composer.dev.json composer test
+
+  prod-test:
+    name: Production Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, mbstring
+          coverage: none
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: prod-${{ runner.os }}-composer-${{ hashFiles('composer.json', 'composer.lock') }}
+          restore-keys: prod-${{ runner.os }}-composer-
+      - name: Install dependencies (production)
+        run: composer install --no-progress
+      - name: Run tests
+        run: composer test

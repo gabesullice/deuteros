@@ -45,11 +45,6 @@ final class FieldItemListDoubleBuilder {
   private mixed $mutableStateUpdater = NULL;
 
   /**
-   * Whether this field contains entity references.
-   */
-  private bool $hasEntityReferences = FALSE;
-
-  /**
    * Constructs a FieldItemListDoubleBuilder.
    *
    * @param \Deuteros\Double\FieldDoubleDefinition $definition
@@ -103,6 +98,12 @@ final class FieldItemListDoubleBuilder {
       'setValue' => $this->buildSetValueResolver(),
       '__set' => $this->buildMagicSetResolver(),
       'referencedEntities' => $this->buildReferencedEntitiesResolver(),
+      'getIterator' => $this->buildIteratorResolver(),
+      'count' => $this->buildCountResolver(),
+      'offsetExists' => $this->buildOffsetExistsResolver(),
+      'offsetGet' => $this->buildOffsetGetResolver(),
+      'offsetSet' => $this->buildOffsetSetResolver(),
+      'offsetUnset' => $this->buildOffsetUnsetResolver(),
     ];
   }
 
@@ -143,7 +144,7 @@ final class FieldItemListDoubleBuilder {
    * Builds the ::getValue resolver.
    *
    * Returns field values as an array of associative arrays with property names
-   * as keys, matching Drupal's "FieldItemListInterface::getValue()" behavior.
+   * as keys, matching Drupal's "FieldItemListInterface::getValue" behavior.
    *
    * @return callable
    *   The resolver callable.
@@ -230,15 +231,22 @@ final class FieldItemListDoubleBuilder {
   /**
    * Builds the ::setValue resolver.
    *
+   * Returns an anonymous object as a placeholder. The factory adapters are
+   * responsible for replacing this with the actual field list instance to
+   * support Drupal's fluent ::setValue interface (method chaining).
+   *
    * @return callable
    *   The resolver callable.
+   *
+   * @see \Deuteros\Double\PhpUnit\MockEntityDoubleFactory::wireFieldListResolvers
+   * @see \Deuteros\Double\Prophecy\ProphecyEntityDoubleFactory::wireFieldListResolvers
    */
   private function buildSetValueResolver(): callable {
     return function (array $context, mixed $values): object {
       if (!$this->mutable) {
         throw new \LogicException(
           "Cannot modify field '{$this->fieldName}' on immutable entity double. "
-          . "Use createMutableEntityDouble() if you need to test mutations."
+          . "Use createMutable() if you need to test mutations."
         );
       }
 
@@ -252,10 +260,15 @@ final class FieldItemListDoubleBuilder {
       $this->resolvedValue = NULL;
       $this->fieldItemCache = [];
 
-      // Update the field definition.
+      // Update the field definition. Note: This intentionally mutates the
+      // builder state to track the new field value. This mutation is acceptable
+      // because: (1) it only occurs on mutable doubles, (2) each field list
+      // builder is single-use per entity double instance, and (3) the mutation
+      // enables the mutable double to return updated values on subsequent
+      // getter calls.
       $this->definition = new FieldDoubleDefinition($values);
 
-      // Return $this equivalent.
+      // Return placeholder object - adapters convert this to return $fieldList.
       return new class () {};
     };
   }
@@ -279,6 +292,113 @@ final class FieldItemListDoubleBuilder {
       else {
         throw new \LogicException("Setting property '$property' on field item list is not supported.");
       }
+    };
+  }
+
+  /**
+   * Builds the ::getIterator resolver.
+   *
+   * Returns an ArrayIterator over the field items, supporting foreach loops.
+   *
+   * @return callable
+   *   The resolver callable.
+   */
+  private function buildIteratorResolver(): callable {
+    return function (array $context): \Traversable {
+      /** @var array<string, mixed> $context */
+      $values = $this->resolveValues($context);
+      $items = [];
+      foreach ($values as $delta => $value) {
+        $items[] = $this->getFieldItemDouble($delta, $value, $context);
+      }
+      return new \ArrayIterator($items);
+    };
+  }
+
+  /**
+   * Builds the ::count resolver.
+   *
+   * Returns the number of field items in the list.
+   *
+   * @return callable
+   *   The resolver callable.
+   */
+  private function buildCountResolver(): callable {
+    return function (array $context): int {
+      /** @var array<string, mixed> $context */
+      return count($this->resolveValues($context));
+    };
+  }
+
+  /**
+   * Builds the ::offsetExists resolver.
+   *
+   * Checks if an item exists at the given delta for ArrayAccess.
+   *
+   * @return callable
+   *   The resolver callable.
+   */
+  private function buildOffsetExistsResolver(): callable {
+    return function (array $context, mixed $offset): bool {
+      /** @var array<string, mixed> $context */
+      $values = $this->resolveValues($context);
+      return isset($values[(int) $offset]);
+    };
+  }
+
+  /**
+   * Builds the ::offsetGet resolver.
+   *
+   * Returns the item at the given delta for ArrayAccess. Same as ::get.
+   *
+   * @return callable
+   *   The resolver callable.
+   */
+  private function buildOffsetGetResolver(): callable {
+    // Delegate to the get resolver.
+    /** @var callable(array<string, mixed>, int): ?object $getResolver */
+    $getResolver = $this->buildGetResolver();
+    return function (array $context, mixed $offset) use ($getResolver): ?object {
+      /** @var array<string, mixed> $context */
+      return $getResolver($context, (int) $offset);
+    };
+  }
+
+  /**
+   * Builds the ::offsetSet resolver.
+   *
+   * Sets an item at the given delta for ArrayAccess. This is not supported
+   * because field item list mutation at the item level requires complex
+   * internal state management. Use ::setValue to set the entire field value.
+   *
+   * @return callable
+   *   The resolver callable.
+   */
+  private function buildOffsetSetResolver(): callable {
+    return function (array $context, mixed $offset, mixed $value): void {
+      throw new \LogicException(
+        "ArrayAccess::offsetSet is not supported on field list doubles. "
+        . "Use \$entity->set('{$this->fieldName}', \$values) instead."
+      );
+    };
+  }
+
+  /**
+   * Builds the ::offsetUnset resolver.
+   *
+   * Removes an item at the given delta for ArrayAccess. This is not supported
+   * because field item list mutation at the item level requires complex
+   * internal state management. Use ::setValue to set the entire field value.
+   *
+   * @return callable
+   *   The resolver callable.
+   */
+  private function buildOffsetUnsetResolver(): callable {
+    return function (array $context, mixed $offset): void {
+      throw new \LogicException(
+        "ArrayAccess::offsetUnset is not supported on field list doubles. "
+        . "Use \$entity->set('{$this->fieldName}', \$values) instead."
+      );
     };
   }
 
@@ -327,7 +447,6 @@ final class FieldItemListDoubleBuilder {
   private function normalizeToArray(mixed $value): array {
     // Check for entity references and normalize them.
     if (EntityReferenceNormalizer::containsEntityReferences($value)) {
-      $this->hasEntityReferences = TRUE;
       return EntityReferenceNormalizer::normalize($value);
     }
 
@@ -410,19 +529,6 @@ final class FieldItemListDoubleBuilder {
    */
   public function getFieldDefinition(): FieldDoubleDefinition {
     return $this->definition;
-  }
-
-  /**
-   * Checks if this field contains entity references.
-   *
-   * Must be called after values have been resolved (e.g., after ::getResolvers
-   * is called and one of the resolvers is invoked).
-   *
-   * @return bool
-   *   TRUE if entity references are present.
-   */
-  public function hasEntityReferences(): bool {
-    return $this->hasEntityReferences;
   }
 
   /**

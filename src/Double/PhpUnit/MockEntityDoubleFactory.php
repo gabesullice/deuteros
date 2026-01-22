@@ -101,10 +101,7 @@ final class MockEntityDoubleFactory extends EntityDoubleFactory {
         else {
           $mock->method('set')->willReturnCallback(
             function (string $fieldName) {
-              throw new \LogicException(
-                "Cannot modify field '$fieldName' on immutable entity double. "
-                . "Use createMutableEntityDouble() if you need to test mutations."
-              );
+              throw new \LogicException(sprintf(self::IMMUTABLE_FIELD_ERROR, $fieldName));
             }
           );
         }
@@ -129,10 +126,7 @@ final class MockEntityDoubleFactory extends EntityDoubleFactory {
       else {
         $mock->method('__set')->willReturnCallback(
           function (string $name) {
-            throw new \LogicException(
-              "Cannot modify field '$name' on immutable entity double. "
-              . "Use createMutableEntityDouble() if you need to test mutations."
-            );
+            throw new \LogicException(sprintf(self::IMMUTABLE_FIELD_ERROR, $name));
           }
         );
       }
@@ -144,20 +138,13 @@ final class MockEntityDoubleFactory extends EntityDoubleFactory {
     }
     elseif (!$definition->hasMethod('toUrl')) {
       $mock->method('toUrl')->willReturnCallback(
-        fn() => throw new \LogicException(
-          "Method 'toUrl' requires url() to be configured in the entity double definition. "
-          . "Add ->url('/path/to/entity') to your builder."
-        )
+        fn() => throw new \LogicException(self::TO_URL_NOT_CONFIGURED_ERROR)
       );
     }
 
     // Wire remaining method overrides (those not already wired above).
-    $coreMethodsWired = [
-      'id', 'uuid', 'label', 'bundle', 'getEntityTypeId',
-      'hasField', 'get', 'set', '__get', '__set', 'toUrl',
-    ];
     foreach ($definition->methods as $method => $override) {
-      if (in_array($method, $coreMethodsWired, TRUE)) {
+      if (in_array($method, self::CORE_ENTITY_METHODS, TRUE)) {
         // Already handled above.
         continue;
       }
@@ -238,6 +225,32 @@ final class MockEntityDoubleFactory extends EntityDoubleFactory {
     $mock->method('get')->willReturnCallback(fn(int $delta) => $resolvers['get']($context, $delta));
     $mock->method('__get')->willReturnCallback(fn(string $property) => $resolvers['__get']($context, $property));
 
+    // Wire getIterator if the mock implements IteratorAggregate.
+    if (method_exists($mock, 'getIterator')) {
+      $mock->method('getIterator')->willReturnCallback(fn() => $resolvers['getIterator']($context));
+    }
+
+    // Wire count if the mock implements Countable.
+    if (method_exists($mock, 'count')) {
+      $mock->method('count')->willReturnCallback(fn() => $resolvers['count']($context));
+    }
+
+    // Wire ArrayAccess methods if the mock implements ArrayAccess.
+    if (method_exists($mock, 'offsetExists')) {
+      $mock->method('offsetExists')->willReturnCallback(
+        fn(mixed $offset) => $resolvers['offsetExists']($context, $offset)
+      );
+      $mock->method('offsetGet')->willReturnCallback(
+        fn(mixed $offset) => $resolvers['offsetGet']($context, $offset)
+      );
+      $mock->method('offsetSet')->willReturnCallback(
+        fn(mixed $offset, mixed $value) => $resolvers['offsetSet']($context, $offset, $value)
+      );
+      $mock->method('offsetUnset')->willReturnCallback(
+        fn(mixed $offset) => $resolvers['offsetUnset']($context, $offset)
+      );
+    }
+
     if ($definition->mutable) {
       $self = $mock;
       $mock->method('setValue')->willReturnCallback(
@@ -253,18 +266,12 @@ final class MockEntityDoubleFactory extends EntityDoubleFactory {
     else {
       $mock->method('setValue')->willReturnCallback(
         function () use ($fieldName) {
-          throw new \LogicException(
-            "Cannot modify field '$fieldName' on immutable entity double. "
-            . "Use createMutableEntityDouble() if you need to test mutations."
-          );
+          throw new \LogicException(sprintf(self::IMMUTABLE_FIELD_ERROR, $fieldName));
         }
       );
       $mock->method('__set')->willReturnCallback(
         function (string $property) use ($fieldName) {
-          throw new \LogicException(
-            "Cannot modify field '$fieldName' on immutable entity double. "
-            . "Use createMutableEntityDouble() if you need to test mutations."
-          );
+          throw new \LogicException(sprintf(self::IMMUTABLE_FIELD_ERROR, $fieldName));
         }
       );
     }
@@ -313,18 +320,12 @@ final class MockEntityDoubleFactory extends EntityDoubleFactory {
     else {
       $mock->method('setValue')->willReturnCallback(
         function () use ($delta) {
-          throw new \LogicException(
-            "Cannot modify field item at delta $delta on immutable entity double. "
-            . "Use createMutableEntityDouble() if you need to test mutations."
-          );
+          throw new \LogicException(sprintf(self::IMMUTABLE_FIELD_ITEM_ERROR, $delta));
         }
       );
       $mock->method('__set')->willReturnCallback(
         function (string $property) {
-          throw new \LogicException(
-            "Cannot modify property '$property' on immutable entity double. "
-            . "Use createMutableEntityDouble() if you need to test mutations."
-          );
+          throw new \LogicException(sprintf(self::IMMUTABLE_PROPERTY_ERROR, $property));
         }
       );
     }

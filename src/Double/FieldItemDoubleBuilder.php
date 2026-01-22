@@ -90,7 +90,7 @@ final class FieldItemDoubleBuilder {
    * Builds the ::getValue resolver.
    *
    * Returns the field item value as an associative array with property names
-   * as keys, matching Drupal's "FieldItemInterface::getValue()" behavior.
+   * as keys, matching Drupal's "FieldItemInterface::getValue" behavior.
    *
    * @return callable
    *   The resolver callable.
@@ -126,21 +126,28 @@ final class FieldItemDoubleBuilder {
   /**
    * Builds the ::setValue resolver.
    *
+   * Returns an anonymous object as a placeholder. The factory adapters are
+   * responsible for replacing this with the actual field item instance to
+   * support Drupal's fluent ::setValue interface (method chaining).
+   *
    * @return callable
    *   The resolver callable.
+   *
+   * @see \Deuteros\Double\PhpUnit\MockEntityDoubleFactory::wireFieldItemResolvers
+   * @see \Deuteros\Double\Prophecy\ProphecyEntityDoubleFactory::wireFieldItemResolvers
    */
   private function buildSetValueResolver(): callable {
     return function (array $context, mixed $value): object {
       if (!$this->mutable) {
         throw new \LogicException(
          "Cannot modify field '{$this->fieldName}' item at delta {$this->delta} on immutable entity double. "
-          . "Use createMutableEntityDouble() if you need to test mutations."
+          . "Use createMutable() if you need to test mutations."
         );
       }
 
       $this->value = $value;
 
-      // Return $this equivalent.
+      // Return placeholder object - adapters convert this to return $fieldItem.
       return new class () {};
     };
   }
@@ -158,7 +165,7 @@ final class FieldItemDoubleBuilder {
       if (!$this->mutable) {
         throw new \LogicException(
           "Cannot modify property '$property' on immutable entity double. "
-          . "Use createMutableEntityDouble() if you need to test mutations."
+          . "Use createMutable() if you need to test mutations."
         );
       }
 

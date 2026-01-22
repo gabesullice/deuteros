@@ -207,7 +207,7 @@ class FieldItemListDoubleBuilderTest extends TestCase {
 
     $this->expectException(\LogicException::class);
     $this->expectExceptionMessage("Cannot modify field 'field_test' on immutable");
-    $this->expectExceptionMessage('createMutableEntityDouble()');
+    $this->expectExceptionMessage('createMutable()');
 
     $resolvers['setValue']([], 'new value');
   }
@@ -363,36 +363,90 @@ class FieldItemListDoubleBuilderTest extends TestCase {
   }
 
   /**
-   * Tests ::hasEntityReferences returns true after resolving entity refs.
+   * Tests ::getIterator resolver returns an ArrayIterator.
    */
-  public function testHasEntityReferencesTrue(): void {
-    $entity = $this->createMock(EntityInterface::class);
-    $entity->method('id')->willReturn(1);
+  public function testIteratorResolver(): void {
+    $values = [
+      ['target_id' => 1],
+      ['target_id' => 2],
+      ['target_id' => 3],
+    ];
+    $definition = new FieldDoubleDefinition($values);
+    $builder = new FieldItemListDoubleBuilder($definition, 'field_tags');
 
-    $definition = new FieldDoubleDefinition($entity);
-    $builder = new FieldItemListDoubleBuilder($definition, 'field_ref');
-    $builder->setFieldItemFactory(fn() => new \stdClass());
+    $items = [];
+    $builder->setFieldItemFactory(function (int $delta) use (&$items) {
+      $item = new \stdClass();
+      $item->delta = $delta;
+      $items[$delta] = $item;
+      return $item;
+    });
+
     $resolvers = $builder->getResolvers();
+    $iterator = $resolvers['getIterator']([]);
 
-    // Trigger value resolution.
-    $resolvers['first']([]);
-
-    $this->assertTrue($builder->hasEntityReferences());
+    $this->assertInstanceOf(\Traversable::class, $iterator);
+    $iteratedItems = iterator_to_array($iterator);
+    $this->assertCount(3, $iteratedItems);
+    // @phpstan-ignore property.nonObject
+    $this->assertSame(0, $iteratedItems[0]->delta);
+    // @phpstan-ignore property.nonObject
+    $this->assertSame(1, $iteratedItems[1]->delta);
+    // @phpstan-ignore property.nonObject
+    $this->assertSame(2, $iteratedItems[2]->delta);
   }
 
   /**
-   * Tests ::hasEntityReferences returns false for non-entity fields.
+   * Tests ::getIterator resolver returns empty iterator for empty field.
    */
-  public function testHasEntityReferencesFalse(): void {
-    $definition = new FieldDoubleDefinition('plain value');
-    $builder = new FieldItemListDoubleBuilder($definition, 'field_text');
+  public function testIteratorResolverEmpty(): void {
+    $definition = new FieldDoubleDefinition([]);
+    $builder = new FieldItemListDoubleBuilder($definition, 'field_test');
     $builder->setFieldItemFactory(fn() => new \stdClass());
     $resolvers = $builder->getResolvers();
 
-    // Trigger value resolution.
-    $resolvers['first']([]);
+    $iterator = $resolvers['getIterator']([]);
 
-    $this->assertFalse($builder->hasEntityReferences());
+    $this->assertInstanceOf(\Traversable::class, $iterator);
+    $this->assertCount(0, iterator_to_array($iterator));
+  }
+
+  /**
+   * Tests ::count resolver returns number of items.
+   */
+  public function testCountResolver(): void {
+    $values = [
+      ['target_id' => 1],
+      ['target_id' => 2],
+      ['target_id' => 3],
+    ];
+    $definition = new FieldDoubleDefinition($values);
+    $builder = new FieldItemListDoubleBuilder($definition, 'field_tags');
+    $resolvers = $builder->getResolvers();
+
+    $this->assertSame(3, $resolvers['count']([]));
+  }
+
+  /**
+   * Tests ::count resolver returns zero for empty field.
+   */
+  public function testCountResolverEmpty(): void {
+    $definition = new FieldDoubleDefinition([]);
+    $builder = new FieldItemListDoubleBuilder($definition, 'field_test');
+    $resolvers = $builder->getResolvers();
+
+    $this->assertSame(0, $resolvers['count']([]));
+  }
+
+  /**
+   * Tests ::count resolver returns one for scalar value.
+   */
+  public function testCountResolverScalar(): void {
+    $definition = new FieldDoubleDefinition('single value');
+    $builder = new FieldItemListDoubleBuilder($definition, 'field_text');
+    $resolvers = $builder->getResolvers();
+
+    $this->assertSame(1, $resolvers['count']([]));
   }
 
   /**
@@ -443,6 +497,109 @@ class FieldItemListDoubleBuilderTest extends TestCase {
     $resolvers = $builder->getResolvers();
 
     $this->assertSame($values, $resolvers['getValue']([]));
+  }
+
+  /**
+   * Tests ::offsetExists resolver returns true for existing delta.
+   */
+  public function testOffsetExistsReturnsTrue(): void {
+    $values = [
+      ['target_id' => 1],
+      ['target_id' => 2],
+    ];
+    $definition = new FieldDoubleDefinition($values);
+    $builder = new FieldItemListDoubleBuilder($definition, 'field_tags');
+    $resolvers = $builder->getResolvers();
+
+    $this->assertTrue($resolvers['offsetExists']([], 0));
+    $this->assertTrue($resolvers['offsetExists']([], 1));
+  }
+
+  /**
+   * Tests ::offsetExists resolver returns false for non-existing delta.
+   */
+  public function testOffsetExistsReturnsFalse(): void {
+    $values = [
+      ['target_id' => 1],
+    ];
+    $definition = new FieldDoubleDefinition($values);
+    $builder = new FieldItemListDoubleBuilder($definition, 'field_tags');
+    $resolvers = $builder->getResolvers();
+
+    $this->assertFalse($resolvers['offsetExists']([], 1));
+    $this->assertFalse($resolvers['offsetExists']([], 99));
+  }
+
+  /**
+   * Tests ::offsetGet resolver returns field item at delta.
+   */
+  public function testOffsetGetReturnsItem(): void {
+    $values = [
+      ['target_id' => 1],
+      ['target_id' => 2],
+    ];
+    $definition = new FieldDoubleDefinition($values);
+    $builder = new FieldItemListDoubleBuilder($definition, 'field_tags');
+
+    $items = [];
+    $builder->setFieldItemFactory(function (int $delta) use (&$items) {
+      $item = new \stdClass();
+      $item->delta = $delta;
+      $items[$delta] = $item;
+      return $item;
+    });
+
+    $resolvers = $builder->getResolvers();
+    $item0 = $resolvers['offsetGet']([], 0);
+    $item1 = $resolvers['offsetGet']([], 1);
+
+    // @phpstan-ignore property.nonObject
+    $this->assertSame(0, $item0->delta);
+    // @phpstan-ignore property.nonObject
+    $this->assertSame(1, $item1->delta);
+  }
+
+  /**
+   * Tests ::offsetGet resolver returns null for non-existing delta.
+   */
+  public function testOffsetGetReturnsNull(): void {
+    $values = [['target_id' => 1]];
+    $definition = new FieldDoubleDefinition($values);
+    $builder = new FieldItemListDoubleBuilder($definition, 'field_tags');
+    $builder->setFieldItemFactory(fn() => new \stdClass());
+    $resolvers = $builder->getResolvers();
+
+    $this->assertNull($resolvers['offsetGet']([], 99));
+  }
+
+  /**
+   * Tests ::offsetSet resolver throws an exception.
+   */
+  public function testOffsetSetThrowsException(): void {
+    $definition = new FieldDoubleDefinition('value');
+    $builder = new FieldItemListDoubleBuilder($definition, 'field_test');
+    $resolvers = $builder->getResolvers();
+
+    $this->expectException(\LogicException::class);
+    $this->expectExceptionMessage('ArrayAccess::offsetSet is not supported');
+    $this->expectExceptionMessage("set('field_test'");
+
+    $resolvers['offsetSet']([], 0, 'new value');
+  }
+
+  /**
+   * Tests ::offsetUnset resolver throws an exception.
+   */
+  public function testOffsetUnsetThrowsException(): void {
+    $definition = new FieldDoubleDefinition('value');
+    $builder = new FieldItemListDoubleBuilder($definition, 'field_test');
+    $resolvers = $builder->getResolvers();
+
+    $this->expectException(\LogicException::class);
+    $this->expectExceptionMessage('ArrayAccess::offsetUnset is not supported');
+    $this->expectExceptionMessage("set('field_test'");
+
+    $resolvers['offsetUnset']([], 0);
   }
 
   /**

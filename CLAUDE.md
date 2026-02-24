@@ -187,6 +187,23 @@ be used by user-provided context.
 - Adapters conditionally wire these methods only when the interface implements
   `\ArrayAccess`
 
+**Raw Entity Doubles:**
+- `createEntityDouble()` / `createMutableEntityDouble()` return the raw
+  framework-specific double (PHPUnit `MockObject` or Prophecy
+  `ObjectProphecy`) without finalization
+- Enables post-creation customization (custom stubs and expectations)
+- Internally calls `buildAndWireDouble()` directly, bypassing
+  `instantiateDouble()` and trait stub application
+- Traits are explicitly rejected with `\InvalidArgumentException`
+- `buildAndWireDouble()` is the shared core extracted from
+  `buildEntityDouble()` containing interface resolution, builder setup,
+  double creation, and resolver wiring
+- Guardrails are skipped (`wireGuardrails: FALSE`) so users can
+  override methods like `save()`, `delete()`, `access()` etc.
+  after creation; `create()` / `createMutable()` retain guardrails
+- Definition-based method overrides (via `->method()`) bypass
+  guardrails regardless, as they have higher precedence
+
 **Resolver Return Placeholders:**
 - `::set`, `::setValue` resolvers in builders return anonymous objects as placeholders
 - Factory adapters convert these to return the actual entity/field list/item instance

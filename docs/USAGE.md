@@ -489,6 +489,97 @@ $entity = $factory->create(/* ... */);
 $entity->set('field_status', 'new'); // Throws LogicException
 ```
 
+### Raw Entity Doubles (Post-Creation Customization)
+
+Use `createEntityDouble()` or `createMutableEntityDouble()` when you need
+to add custom stubs or expectations after creation. These methods return
+the framework-specific raw double object instead of a finalized
+`EntityInterface`.
+
+**PHPUnit** — returns a `MockObject` (also implements `EntityInterface`):
+
+```php
+$double = $factory->createEntityDouble(
+  EntityDoubleDefinitionBuilder::create('node')
+    ->bundle('article')
+    ->interface(EntityChangedInterface::class)
+    ->build()
+);
+
+// Add custom stubs after creation.
+$double->method('getChangedTime')->willReturn(1704067200);
+
+// Add expectations.
+$double->expects($this->once())
+  ->method('getChangedTime')
+  ->willReturn(1704067200);
+
+// The double is already an EntityInterface.
+$myService->process($double);
+```
+
+**Prophecy** — returns an `ObjectProphecy`:
+
+```php
+$double = $factory->createEntityDouble(
+  EntityDoubleDefinitionBuilder::create('node')
+    ->bundle('article')
+    ->interface(EntityChangedInterface::class)
+    ->build()
+);
+
+// Add custom stubs.
+$double->getChangedTime()->willReturn(1704067200);
+
+// Add expectations.
+$double->getChangedTime()->shouldBeCalled();
+
+// Reveal to get the EntityInterface.
+$entity = $double->reveal();
+$myService->process($entity);
+```
+
+**Mutable variant:**
+
+```php
+$double = $factory->createMutableEntityDouble(
+  EntityDoubleDefinitionBuilder::create('node')
+    ->bundle('article')
+    ->field('field_status', 'draft')
+    ->build()
+);
+```
+
+**Limitations:** Raw entity doubles do not support traits. Use `create()`
+or `createMutable()` for trait support.
+
+**Overriding guardrailed methods:** Raw entity doubles skip guardrails,
+so you can override methods like `save()`, `delete()`, `access()` etc.
+after creation:
+
+```php
+// PHPUnit
+$double = $factory->createEntityDouble($definition);
+$double->method('save')->willReturn(42);
+
+// Prophecy
+$double = $factory->createEntityDouble($definition);
+$double->save()->willReturn(42);
+$entity = $double->reveal();
+```
+
+For non-raw doubles, use the definition builder's `->method()`:
+
+```php
+$entity = $factory->create(
+  EntityDoubleDefinitionBuilder::create('node')
+    ->bundle('article')
+    ->method('save', fn() => 42)
+    ->build()
+);
+$entity->save(); // 42
+```
+
 ### Method Overrides
 
 Override any method with a custom implementation:
